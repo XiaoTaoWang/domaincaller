@@ -19,7 +19,7 @@ First install dependencies using `conda <https://conda.io/miniconda.html>`_::
 
 Then install the domaincaller using pip::
 
-    pip install domaincaller-0.1.0-py3-none-any.whl
+    pip install domaincaller
 
 Usage
 =====
