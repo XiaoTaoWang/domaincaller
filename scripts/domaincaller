@@ -1,0 +1,124 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+"""
+Created on Sun May 22 14:37:37 2016
+
+@author: wxt
+
+"""
+import argparse, sys, os, logging, logging.handlers, traceback, domaincaller
+
+currentVersion = domaincaller.__version__
+
+def getargs():
+    ## Construct an ArgumentParser object for command-line arguments
+    parser = argparse.ArgumentParser(usage = '%(prog)s <--uri cool -O output> [options]',
+                                     description = '''A python implementation of original DI-based
+                                     domain caller proposed by Dixon et al. (2012)''',
+                                     formatter_class = argparse.ArgumentDefaultsHelpFormatter)
+    
+    parser.add_argument('-v', '--version', action = 'version',
+                        version = ' '.join(['%(prog)s', currentVersion]),
+                        help = 'Print version number and exit')
+
+    # Output
+    parser.add_argument('--uri',
+                        help = 'Cool URI.')
+    parser.add_argument('-O', '--output')
+    parser.add_argument('-D', '--DI-output')
+    parser.add_argument('--window-size', default=2000000, type=int,
+                        help='''Window size used for directionality index (DI) calculation.''')
+    parser.add_argument('-W', '--weight-col', default='weight',
+                        help = '''Name of the column in .cool to be used to construct the
+                        normalized matrix. Specify "-W RAW" if you want to run with the raw matrix.''')
+    parser.add_argument('--exclude', nargs = '*', default = ['chrY','chrM'],
+                        help = '''List of chromosomes to exclude.''')
+    parser.add_argument('-p', '--cpu-core', type = int, default = 1,
+                        help = 'Number of processes to launch.')
+    
+    parser.add_argument('--logFile', default = 'domaincaller.log', help = '''Logging file name.''')
+    
+    ## Parse the command-line arguments
+    commands = sys.argv[1:]
+    if not commands:
+        commands.append('-h')
+    args = parser.parse_args(commands)
+    
+    return args, commands
+
+def run():
+    # Parse Arguments
+    args, commands = getargs()
+    # Improve the performance if you don't want to run it
+    if commands[0] not in ['-h', '-v', '--help', '--version']:
+        ## Root Logger Configuration
+        logger = logging.getLogger()
+        logger.setLevel(10)
+        console = logging.StreamHandler()
+        filehandler = logging.handlers.RotatingFileHandler(args.logFile,
+                                                           maxBytes = 200000,
+                                                           backupCount = 5)
+        # Set level for Handlers
+        console.setLevel('INFO')
+        filehandler.setLevel('DEBUG')
+        # Customizing Formatter
+        formatter = logging.Formatter(fmt = '%(name)-25s %(levelname)-7s @ %(asctime)s: %(message)s',
+                                      datefmt = '%m/%d/%y %H:%M:%S')
+        ## Unified Formatter
+        console.setFormatter(formatter)
+        filehandler.setFormatter(formatter)
+        # Add Handlers
+        logger.addHandler(console)
+        logger.addHandler(filehandler)
+        
+        ## Logging for argument setting
+        arglist = ['# ARGUMENT LIST:',
+                   '# Output TAD file = {0}'.format(args.output),
+                   '# Output DI file = {0}'.format(args.DI_output),
+                   '# Cool URI = {0}'.format(args.uri),
+                   '# Window Size = {0}'.format(args.window_size),
+                   '# Column for matrix balancing = {0}'.format(args.weight_col),
+                   '# Excluded Chromosomes = {0}'.format(args.exclude),
+                   '# Number of processes used = {0}'.format(args.cpu_core),
+                   '# Log file name = {0}'.format(args.logFile)
+                   ]
+        
+        argtxt = '\n'.join(arglist)
+        logger.info('\n' + argtxt)
+        
+        from domaincaller.genomeLev import Genome
+        from domaincaller.chromLev import Chrom
+        
+        try:
+            if not args.weight_col in ['weight']:
+                correct = False
+            else:
+                correct = args.weight_col
+
+            G = Genome(args.uri, balance_type=correct, cpu_core=args.cpu_core, window=args.window_size,
+                       exclude=args.exclude)
+            model = G.model
+            logger.info('Detecting TADs ...')
+            DIout = open(args.DI_output, 'w')
+            out = open(args.output, 'w')
+            for c in G.chroms:
+                logger.info('{0} ...'.format(c))
+                tdata = G.hic.matrix(balance=correct, sparse=True).fetch(c).tocsr()
+                work = Chrom(c, G.hic.binsize, tdata)
+                work.callDomains(model, window=args.window_size)
+                for d in work.domains:
+                    out.write('{0}\t{1}\t{2}\n'.format(c, d[0], d[1]))
+                for i, v in enumerate(work.DIs):
+                    start = i * G.hic.binsize
+                    end = min(start + G.hic.binsize, G.hic.chromsizes[c])
+                    DIout.write('{0}\t{1}\t{2}\t{3:.4g}\n'.format(c, start, end, v))
+
+            DIout.close()
+            out.close()
+            logger.info('Done!')
+        except:
+            traceback.print_exc(file = open(args.logFile, 'a'))
+            sys.exit(1)
+
+if __name__ == '__main__':
+    run()
