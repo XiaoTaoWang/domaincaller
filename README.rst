@@ -15,7 +15,7 @@ First install dependencies using `conda <https://conda.io/miniconda.html>`_::
     conda config --add channels bioconda
     conda config --add channels conda-forge
     conda create -n domaincaller python=3.7.1 cooler=0.8.6 numpy=1.17.2 scipy=1.3.1 pomegranate=0.10.0 networkx=1.11
-    conda activate nholoop
+    conda activate domaincaller
 
 Then install the domaincaller using pip::
 
