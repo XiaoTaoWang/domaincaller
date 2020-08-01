@@ -72,8 +72,8 @@ class Chrom(object):
     def splitChrom(self, DIs):
         
         # minregion and maxgaplen are set intuitively
-        maxgaplen = max(100000 // self.res, 5)
-        minregion = maxgaplen * 2
+        maxgaplen = max(400000 // self.res, 5)
+        minregion = maxgaplen
 
         valid_pos = np.where(DIs != 0)[0]
         gapsizes = valid_pos[1:] - valid_pos[:-1]
@@ -121,7 +121,7 @@ class Chrom(object):
 
         return Map
 
-    def pipe(self, seq, probs=0.99):
+    def pipe(self, seq, Map, probs=0.99):
         """
         Estimate the median posterior probability of a region(a stretch of same
         state). We believe in a region only if it has a median posterior
@@ -142,7 +142,7 @@ class Chrom(object):
         for i in range(1, len(path)):
             state = path[i]
             if state != cs:
-                mediate.append([start, end, cs, np.median(prob_pool)])
+                mediate.append([start, end, Map[cs], np.median(prob_pool)])
                 start = i
                 end = i + self.res
                 cs = state
@@ -150,9 +150,9 @@ class Chrom(object):
             else:
                 end = i + self.res
                 prob_pool.append(state_probs[i][cs])
-        mediate.append([start, end, cs, np.median(prob_pool)])
+        mediate.append([start, end, Map[cs], np.median(prob_pool)])
 
-        dawn = []
+        dawn = [] #########
         # Calibrate the first and the last line
         if (mediate[0][1] - mediate[0][0]) <= 3:
             mediate[0][2] = mediate[1][2]
@@ -174,6 +174,68 @@ class Chrom(object):
                     dawn.append([temp[0], temp[1], 1])
         
         dawn.append([mediate[-1][0], mediate[-1][1], mediate[-1][2]])
+
+        ## Infer TADs
+        preTADs = []
+        # Artificial Chromosome Size
+        genome_size = dawn[-1][1]
+        temp = []
+        for i in xrange(len(dawn)):
+            start = dawn[i][0]
+            end = dawn[i][1]
+            state = dawn[i][2]
+            if i == 0:
+                pre_state = state
+                pre_end = end
+                continue
+            if state != pre_state:
+                if pre_state == 1:
+                    temp.append(start)
+                if state == 1:
+                    temp.extend([pre_end, pre_state])
+                    preTADs.append(temp)
+                    temp = []
+                if (pre_state != 1) and (state != 1):
+                    temp.extend([pre_end, pre_state])
+                    preTADs.append(temp)
+                    temp = [start]
+            
+            pre_end = end
+            pre_state = state
+        
+        if pre_state != 1:
+            temp.extend([genome_size, pre_state])
+            preTADs.append(temp)
+        
+        TADs = []
+        pre_state = -1
+        Chrom = states[0]['chr']
+        temp = [Chrom]
+        for i in xrange(len(preTADs)):
+            if pre_state == -1:
+                if (preTADs[i][-1] != 2) or (len(preTADs[i]) < 3):
+                    continue
+                
+            start = preTADs[i][0]
+            end = preTADs[i][1]
+            state = preTADs[i][2]
+            
+            if state != pre_state:
+                if (state == 2) and (pre_state == -1):
+                    temp.append(start)
+                if (state == 2) and (pre_state == 0):
+                    temp.append(pre_end)
+                    TADs.append(tuple(temp))
+                    temp = [Chrom, start]
+            
+            pre_state = state
+            pre_end = end
+            
+        if (pre_state == 0) and (len(temp) == 2):
+            temp.append(pre_end)
+            TADs.append(tuple(temp))
+        
+        TADs = np.array(TADs, dtype = datatype)
 
 
         return path
