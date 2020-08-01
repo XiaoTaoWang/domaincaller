@@ -1,5 +1,5 @@
 import cooler, logging
-from domaincaller.chromLev import Chrom
+from domaincaller.chromLev import Chrom, extract_matrix
 import numpy as np
 from pomegranate import NormalDistribution, HiddenMarkovModel, GeneralMixtureModel, State
 
@@ -19,7 +19,7 @@ class Genome(object):
                 continue
             log.debug('Chrom {0} ...'.format(c))
             self.chroms.append(c)
-            tdata = lib.matrix(balance=balance_type, sparse=True).fetch(c).tocsr()
+            tdata = extract_matrix(lib, c, balance_type)
             work = Chrom(c, res, tdata)
             work.calDI(window=window)
             work.splitChrom(work.DIs)

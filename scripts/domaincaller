@@ -87,7 +87,7 @@ def run():
         logger.info('\n' + argtxt)
         
         from domaincaller.genomeLev import Genome
-        from domaincaller.chromLev import Chrom
+        from domaincaller.chromLev import Chrom, extract_matrix
         
         try:
             if not args.weight_col in ['weight']:
@@ -140,7 +140,7 @@ def run():
             out = open(args.output, 'w')
             for c in G.chroms:
                 logger.info('{0} ...'.format(c))
-                tdata = G.hic.matrix(balance=correct, sparse=True).fetch(c).tocsr()
+                tdata = extract_matrix(G.hic, c, correct)
                 work = Chrom(c, G.hic.binsize, tdata)
                 work.callDomains(model, window=args.window_size)
                 for d in work.domains:

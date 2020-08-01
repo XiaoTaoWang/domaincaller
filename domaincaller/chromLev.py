@@ -12,6 +12,24 @@ from scipy import sparse
 
 np.seterr(divide = "ignore")
 
+def extract_matrix(clr, chrom, correct):
+
+    if correct == False:
+        M = clr.matrix(balance=correct, sparse=True).fetch(c).tocsr()
+    else:
+        M = clr.matrix(balance=correct, sparse=True).fetch(c).tocsr()
+        with clr.open('r') as grp: 
+            if 'scale' in grp['bins']['weight'].attrs: 
+                scale = grp['bins']['weight'].attrs.get('scale')
+            else:
+                raw = clr.matrix(balance=False, sparse=True).fetch(c).tocsr()
+                marg = np.array(raw.sum(0)).ravel()
+                scale = marg[marg > 0].mean()
+        M = M * scale
+    
+    return M
+
+
 class Chrom(object):
 
     def __init__(self, chrom, res, hicdata):
