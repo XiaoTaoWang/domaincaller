@@ -95,10 +95,45 @@ def run():
             else:
                 correct = args.weight_col
 
-            G = Genome(args.uri, balance_type=correct, cpu_core=args.cpu_core, window=args.window_size,
-                       exclude=args.exclude)
-            model = G.model
-            logger.info('Detecting TADs ...')
+            G = Genome(args.uri, balance_type=correct, window=args.window_size, exclude=args.exclude)
+            logger.info('Fit Hidden Markov Models with up to 20 mixtures ...')
+            maxM = 20
+            aic = np.ones(maxM) * 10000000
+            Ks = np.zeros(maxM, dtype=int)
+            candidates = []
+            for i in range(1, maxM+1):
+                logger.info('Mixture Number: {0}'.format(i))
+
+                K = 0 # Number of Parameters for AIC Calculation
+                # Gaussian Mixture Model Parameters
+                K += (3 * (3 * i))
+                # HMM parameters
+                K += 9 # transition matrix
+
+                model = G.oriHMMParams(numdists=i)
+                model.fit(G.training_data, algorithm='baum-welch', max_iterations=10000,
+                          stop_threshold=1e-5, n_jobs=args.cpu_core, verbose=False)
+                candidates.append(model)
+                
+                logL = sum(model.log_probability(seq) for seq in G.training_data)
+                aic[i-1] = -2 * logL + 2 * K
+                Ks[i-1] = K
+
+                logger.info('Log likelihood: {0}, AIC value: {1}, Parameter Number: {2}'.format(logL, aic[i-1], K))
+            
+            # Apply AIC
+            order = np.int(np.floor(np.log10(abs(aic.min())))) - 1
+            div = np.power(10, order)
+            
+            # Relative probability
+            for i in range(maxM):
+                p_aic = np.exp((aic.min() - aic[i]) / (div * 2))
+                if p_aic >= 0.9:
+                    idx = i
+                    break
+            model = candidates[idx]
+            logger.info('HMM with {0} mixtures achieved the best performance'.format(idx+1))
+
             DIout = open(args.DI_output, 'w')
             out = open(args.output, 'w')
             for c in G.chroms:

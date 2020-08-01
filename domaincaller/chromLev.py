@@ -105,61 +105,78 @@ class Chrom(object):
                     chromRegions[(start, end)] = DIs[start:end]
         
         self.regionDIs = chromRegions
+    
+    def mapStates(self, regionDIs):
 
-    def viterbi(self, seq):
+        states = []
+        DIs = np.r_[[]]
+        for _, seq in regionDIs.items():
+            DIs = np.r_[DIs, seq]
+            states.extend([int(s.name) for i, s in self.hmm.viterbi(seq)[1][1:-1]])
+        states = np.r_[states]
+        Means = np.zeros(3)
+        for i in range(3):
+            Means[i] = DIs[states==i].mean()
+        Map = dict(zip(np.argsort(Means), range(3)))
+
+        return Map
+
+    def pipe(self, seq, probs=0.99):
         """
-        Find the most likely hidden state series using the viterbi algorithm.
+        Estimate the median posterior probability of a region(a stretch of same
+        state). We believe in a region only if it has a median posterior
+        probability >= 0.99, or its size surpass 100 Kb.
         
-        Parameters
-        ----------
-        seq : 1-D numbpy ndarray, float
-            Adaptive DI array for any region.
-        
-        Returns
-        -------
-        path : list
-            List of hidden state labels. Has the same length as the input
-            *seq*.
-        
+        TADs always begin with a single downstream biased state, and end with
+        a last HMM upstream biased state.
         """
         path = [int(s.name) for i, s in self.hmm.viterbi(seq)[1][1:-1]]
+        state_probs = self.hmm.predict_proba(seq)
+
+        # Stretch consecutive same state  -->  Region
+        mediate = []
+        start = 0
+        end = self.res
+        cs = path[0] # Current State
+        prob_pool = [state_probs[0][cs]]
+        for i in range(1, len(path)):
+            state = path[i]
+            if state != cs:
+                mediate.append([start, end, cs, np.median(prob_pool)])
+                start = i
+                end = i + self.res
+                cs = state
+                prob_pool = [state_probs[i][cs]]
+            else:
+                end = i + self.res
+                prob_pool.append(state_probs[i][cs])
+        mediate.append([start, end, cs, np.median(prob_pool)])
+
+        dawn = []
+        # Calibrate the first and the last line
+        if (mediate[0][1] - mediate[0][0]) <= 3:
+            mediate[0][2] = mediate[1][2]
+        if (mediate[-1][1] - mediate[-1][0]) <= 3:
+            mediate[-1][2] = mediate[-2][2]
+        
+        dawn.append([mediate[0][0], mediate[0][1], mediate[0][2]])
+        # Two criteria
+        for i in range(1, len(mediate)-1):
+            temp = mediate[i]
+            if ((temp[1] - temp[0]) >= self.minsize) or (temp[-1] >= probs):
+                dawn.append([temp[0], temp[1], temp[2]])
+            else:
+                Previous = mediate[i-1]
+                Next = mediate[i+1]
+                if Previous[2] == Next[2]:
+                    dawn.append([temp[0], temp[1], Previous[2]])
+                else:
+                    dawn.append([temp[0], temp[1], 1])
+        
+        dawn.append([mediate[-1][0], mediate[-1][1], mediate[-1][2]])
+
 
         return path
-
-    def _getBounds(self, path, junctions=['30']):
-        
-        pathseq = ''.join(map(str, path))
-        pieces = [pathseq]
-        for junc in junctions:
-            gen = []
-            for seq in pieces:
-                tmp = seq.split(junc)
-                if len(tmp) == 1:
-                    gen.extend(tmp)
-                else:
-                    gen.append(tmp[0]+junc[0])
-                    for s in tmp[1:-1]:
-                        gen.append(junc[1]+s+junc[0])
-                    gen.append(junc[1]+tmp[-1])
-
-            pieces = gen
-            
-        bounds = np.r_[0, np.r_[list(map(len, pieces))]].cumsum()
-
-        return bounds
-        
-    def pipe(self, seq, start):
-       
-        # bin-level domain (not base-pair-level domain!)
-        bounds = self._getBounds(self.viterbi(seq), junctions=['30'])
-        pairs = [[bounds[i], bounds[i+1]] for i in range(len(bounds)-1)]
-        domains = []
-        for b in pairs:
-            # start, end
-            tmp = [b[0]+start, b[1]+start]
-            domains.append(tmp)
-
-        return domains
 
     def minCore(self, regionDIs):
         
