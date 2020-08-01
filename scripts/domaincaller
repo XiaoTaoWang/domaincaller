@@ -97,7 +97,8 @@ def run():
 
             G = Genome(args.uri, balance_type=correct, window=args.window_size, exclude=args.exclude)
             logger.info('Fit Hidden Markov Models with up to 20 mixtures ...')
-            maxM = 20
+            maxM = 3
+            #maxM = 20
             aic = np.ones(maxM) * 10000000
             Ks = np.zeros(maxM, dtype=int)
             candidates = []
@@ -134,6 +135,7 @@ def run():
             model = candidates[idx]
             logger.info('HMM with {0} mixtures achieved the best performance'.format(idx+1))
 
+            logger.info('Inferring TADs ...')
             DIout = open(args.DI_output, 'w')
             out = open(args.output, 'w')
             for c in G.chroms:

@@ -13,8 +13,6 @@ from scipy import sparse
 np.seterr(divide = "ignore")
 
 class Chrom(object):
-    
-    minsize = 5
 
     def __init__(self, chrom, res, hicdata):
 
@@ -72,7 +70,7 @@ class Chrom(object):
     def splitChrom(self, DIs):
         
         # minregion and maxgaplen are set intuitively
-        maxgaplen = max(400000 // self.res, 5)
+        maxgaplen = max(200000 // self.res, 5)
         minregion = maxgaplen
 
         valid_pos = np.where(DIs != 0)[0]
@@ -121,11 +119,11 @@ class Chrom(object):
 
         return Map
 
-    def pipe(self, seq, Map, probs=0.99):
+    def pipe(self, seq, Map, region_start, probs=0.99, minsize=3):
         """
         Estimate the median posterior probability of a region(a stretch of same
         state). We believe in a region only if it has a median posterior
-        probability >= 0.99, or its size surpass 100 Kb.
+        probability >= 0.99, or its size surpass 2 bins.
         
         TADs always begin with a single downstream biased state, and end with
         a last HMM upstream biased state.
@@ -136,7 +134,7 @@ class Chrom(object):
         # Stretch consecutive same state  -->  Region
         mediate = []
         start = 0
-        end = self.res
+        end = 1
         cs = path[0] # Current State
         prob_pool = [state_probs[0][cs]]
         for i in range(1, len(path)):
@@ -144,15 +142,15 @@ class Chrom(object):
             if state != cs:
                 mediate.append([start, end, Map[cs], np.median(prob_pool)])
                 start = i
-                end = i + self.res
+                end = i + 1
                 cs = state
                 prob_pool = [state_probs[i][cs]]
             else:
-                end = i + self.res
+                end = i + 1
                 prob_pool.append(state_probs[i][cs])
         mediate.append([start, end, Map[cs], np.median(prob_pool)])
 
-        dawn = [] #########
+        dawn = []
         # Calibrate the first and the last line
         if (mediate[0][1] - mediate[0][0]) <= 3:
             mediate[0][2] = mediate[1][2]
@@ -163,7 +161,7 @@ class Chrom(object):
         # Two criteria
         for i in range(1, len(mediate)-1):
             temp = mediate[i]
-            if ((temp[1] - temp[0]) >= self.minsize) or (temp[-1] >= probs):
+            if ((temp[1] - temp[0]) >= minsize) or (temp[-1] >= probs):
                 dawn.append([temp[0], temp[1], temp[2]])
             else:
                 Previous = mediate[i-1]
@@ -180,7 +178,7 @@ class Chrom(object):
         # Artificial Chromosome Size
         genome_size = dawn[-1][1]
         temp = []
-        for i in xrange(len(dawn)):
+        for i in range(len(dawn)):
             start = dawn[i][0]
             end = dawn[i][1]
             state = dawn[i][2]
@@ -209,9 +207,8 @@ class Chrom(object):
         
         TADs = []
         pre_state = -1
-        Chrom = states[0]['chr']
-        temp = [Chrom]
-        for i in xrange(len(preTADs)):
+        temp = []
+        for i in range(len(preTADs)):
             if pre_state == -1:
                 if (preTADs[i][-1] != 2) or (len(preTADs[i]) < 3):
                     continue
@@ -222,40 +219,36 @@ class Chrom(object):
             
             if state != pre_state:
                 if (state == 2) and (pre_state == -1):
-                    temp.append(start)
+                    temp.append(start+region_start)
                 if (state == 2) and (pre_state == 0):
-                    temp.append(pre_end)
-                    TADs.append(tuple(temp))
-                    temp = [Chrom, start]
+                    temp.append(pre_end+region_start)
+                    TADs.append(temp)
+                    temp = [start+region_start]
             
             pre_state = state
             pre_end = end
             
-        if (pre_state == 0) and (len(temp) == 2):
-            temp.append(pre_end)
-            TADs.append(tuple(temp))
-        
-        TADs = np.array(TADs, dtype = datatype)
+        if (pre_state == 0) and (len(temp) == 1):
+            temp.append(pre_end+region_start)
+            TADs.append(temp)
 
-
-        return path
+        return TADs
 
     def minCore(self, regionDIs):
         
         tmpDomains = {}
+        state_Map = self.mapStates(regionDIs)
         for region in sorted(regionDIs):
             seq = regionDIs[region]
-            domains = self.pipe(seq, region[0])
+            domains = self.pipe(seq, state_Map, region[0], probs=0.99, minsize=3)
             cr = (region[0]*self.res, region[1]*self.res)
             tmpDomains[cr] = []
             for domain in domains:
                 domain[0] = domain[0] * self.res
                 domain[1] = domain[1] * self.res
                 tmpDomains[cr].append(domain)
-        
-        minDomains = self._orifilter(tmpDomains)
 
-        return minDomains
+        return tmpDomains
 
     def getDomainList(self, byregion):
         """
@@ -277,32 +270,6 @@ class Chrom(object):
             DomainList.extend(byregion[region])
 
         return DomainList
-
-    def _orifilter(self, oriDomains):
-        """
-        Perform size filtering on the input domain lists.
-        
-        Parameters
-        ----------
-        oriDomains : dict
-            The keys are tuples representing gap-free regions of the chromosome,
-            and the values are corresponding identified domain lists. Start
-            and end of the domain should be in base-pair unit.
-        
-        Returns
-        -------
-        filtered : dict
-            Pairs of gap-free regions and corresponding filtered domain lists.
-        """
-        filtered = {}
-        for region in oriDomains:
-            tmplist = []
-            for d in oriDomains[region]:
-                if d[1] - d[0] >= (self.minsize*self.res):
-                    tmplist.append(d)
-            if len(tmplist):
-                filtered[region] = tmplist
-        return filtered
     
 
     def callDomains(self, model, window=2000000):
