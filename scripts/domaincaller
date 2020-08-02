@@ -88,6 +88,7 @@ def run():
         
         from domaincaller.genomeLev import Genome
         from domaincaller.chromLev import Chrom, extract_matrix
+        import numpy as np
         
         try:
             if not args.weight_col in ['weight']:
@@ -97,8 +98,8 @@ def run():
 
             G = Genome(args.uri, balance_type=correct, window=args.window_size, exclude=args.exclude)
             logger.info('Fit Hidden Markov Models with up to 20 mixtures ...')
-            maxM = 3
-            #maxM = 20
+            #maxM = 3
+            maxM = 20
             aic = np.ones(maxM) * 10000000
             Ks = np.zeros(maxM, dtype=int)
             candidates = []
@@ -110,11 +111,13 @@ def run():
                 K += (3 * (3 * i))
                 # HMM parameters
                 K += 9 # transition matrix
+                #K += 3 # start probabilities
 
                 model = G.oriHMMParams(numdists=i)
                 model.fit(G.training_data, algorithm='baum-welch', max_iterations=10000,
                           stop_threshold=1e-5, n_jobs=args.cpu_core, verbose=False)
                 candidates.append(model)
+                #print("Edges: {0}".format(model.get_params()['edges']))
                 
                 logL = sum(model.log_probability(seq) for seq in G.training_data)
                 aic[i-1] = -2 * logL + 2 * K

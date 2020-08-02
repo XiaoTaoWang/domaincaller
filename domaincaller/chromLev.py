@@ -15,14 +15,14 @@ np.seterr(divide = "ignore")
 def extract_matrix(clr, chrom, correct):
 
     if correct == False:
-        M = clr.matrix(balance=correct, sparse=True).fetch(c).tocsr()
+        M = clr.matrix(balance=correct, sparse=True).fetch(chrom).tocsr()
     else:
-        M = clr.matrix(balance=correct, sparse=True).fetch(c).tocsr()
+        M = clr.matrix(balance=correct, sparse=True).fetch(chrom).tocsr()
         with clr.open('r') as grp: 
             if 'scale' in grp['bins']['weight'].attrs: 
                 scale = grp['bins']['weight'].attrs.get('scale')
             else:
-                raw = clr.matrix(balance=False, sparse=True).fetch(c).tocsr()
+                raw = clr.matrix(balance=False, sparse=True).fetch(chrom).tocsr()
                 marg = np.array(raw.sum(0)).ravel()
                 scale = marg[marg > 0].mean()
         M = M * scale
@@ -88,7 +88,7 @@ class Chrom(object):
     def splitChrom(self, DIs):
         
         # minregion and maxgaplen are set intuitively
-        maxgaplen = max(200000 // self.res, 5)
+        maxgaplen = max(1000000 // self.res, 10)
         minregion = maxgaplen
 
         valid_pos = np.where(DIs != 0)[0]
@@ -128,7 +128,7 @@ class Chrom(object):
         DIs = np.r_[[]]
         for _, seq in regionDIs.items():
             DIs = np.r_[DIs, seq]
-            states.extend([int(s.name) for i, s in self.hmm.viterbi(seq)[1][1:-1]])
+            states.extend([int(s.name) for i, s in self.hmm.viterbi(seq)[1][1:]])
         states = np.r_[states]
         Means = np.zeros(3)
         for i in range(3):
